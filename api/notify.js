@@ -18,7 +18,7 @@ function isRateLimited(ip) {
 
 // Verify PlayFab session token
 async function verifyPlayFabToken(playerId, sessionTicket) {
-  const response = await fetch("https://<YOUR_PLAYFAB_TITLE_ID>.playfabapi.com/Server/AuthenticateSessionTicket", {
+  const response = await fetch("https://103C94.playfabapi.com/Server/AuthenticateSessionTicket", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
