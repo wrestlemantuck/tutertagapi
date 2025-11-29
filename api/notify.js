@@ -20,33 +20,35 @@ export default async function handler(req, res) {
   global.requestCounts[ip].push(now);
 
   // --- Parse request body ---
-  const { message, playerId, sessionTicket } = req.body;
+  const { message, playerId } = req.body;
 
   if (!message || typeof message !== "string" || message.length > 2000) {
     return res.status(400).json({ error: "Invalid message" });
   }
-  if (!playerId || !sessionTicket) {
-    return res.status(400).json({ error: "Missing player info" });
+  if (!playerId) {
+    return res.status(400).json({ error: "Missing playerId" });
   }
 
   try {
-    // --- Verify PlayFab session ticket ---
-    const pfResp = await fetch(`https://103C94.playfabapi.com/Server/AuthenticateSessionTicket`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "X-SecretKey": process.env.PLAYFAB_SECRET_KEY
-      },
-      body: JSON.stringify({ SessionTicket: sessionTicket })
-    });
+    // Optional: verify player exists using PlayFab server API
+    const pfResp = await fetch(
+      "https://103C94.playfabapi.com/Server/GetPlayerProfile",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-SecretKey": process.env.PLAYFAB_SECRET_KEY
+        },
+        body: JSON.stringify({ PlayFabId: playerId })
+      }
+    );
 
     const pfData = await pfResp.json();
-
-    if (pfData?.data?.PlayerId !== playerId) {
-      return res.status(401).json({ error: "Invalid session" });
+    if (!pfData.data) {
+      return res.status(401).json({ error: "Invalid PlayerId" });
     }
 
-    // --- Send message to Discord ---
+    // Send to Discord
     const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
     if (!webhookUrl) {
       return res.status(500).json({ error: "Discord webhook not configured" });
@@ -58,7 +60,6 @@ export default async function handler(req, res) {
       body: JSON.stringify({ content: `PlayerID: ${playerId}\nMessage: ${message}` })
     });
 
-    // --- Success ---
     return res.status(200).json({ success: true });
 
   } catch (err) {
