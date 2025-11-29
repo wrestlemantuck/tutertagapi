@@ -1,64 +1,56 @@
-import crypto from "crypto";
-import fetch from "node-fetch";
+using System.Collections;
+using UnityEngine;
+using UnityEngine.Networking;
 
-// In-memory rate limiting (small-scale)
-const requestCounts = {};
+public class discordNotifier : MonoBehaviour
+{
+    public string apiUrl = "https://your-vercel-app.vercel.app/api/notify";
 
-function isRateLimited(ip) {
-  const now = Date.now();
-  const window = 60000; // 1 minute
-  const maxRequests = 5;
+    public void sendmessagetodiscord(string message, string playerId, string sessionTicket)
+    {
+        StartCoroutine(postmessagecoroutine(message, playerId, sessionTicket));
+    }
 
-  if (!requestCounts[ip]) requestCounts[ip] = [];
-  requestCounts[ip] = requestCounts[ip].filter(time => now - time < window);
+    private IEnumerator postmessagecoroutine(string message, string playerId, string sessionTicket)
+    {
+        string jsonPayload = JsonUtility.ToJson(new payload(message, playerId, sessionTicket));
 
-  if (requestCounts[ip].length >= maxRequests) return true;
+        using (UnityWebRequest request = new UnityWebRequest(apiUrl, "POST"))
+        {
+            byte[] bodyRaw = System.Text.Encoding.UTF8.GetBytes(jsonPayload);
+            request.uploadHandler = new UploadHandlerRaw(bodyRaw);
+            request.downloadHandler = new DownloadHandlerBuffer();
+            request.SetRequestHeader("Content-Type", "application/json");
 
-  requestCounts[ip].push(now);
-  return false;
-}
+            yield return request.SendWebRequest();
 
-// Verify HMAC signature
-function verifyHMAC(payload, signature) {
-  const secret = process.env.HMAC_SECRET;
-  const hash = crypto
-    .createHmac("sha256", secret)
-    .update(JSON.stringify(payload))
-    .digest("hex");
+#if UNITY_2020_1_OR_NEWER
+            if (request.result != UnityWebRequest.Result.Success)
+#else
+            if (request.isNetworkError || request.isHttpError)
+#endif
+            {
+                Debug.LogError($"error sending message: {request.error}");
+            }
+            else
+            {
+                Debug.Log($"message sent successfully: {request.downloadHandler.text}");
+            }
+        }
+    }
 
-  return crypto.timingSafeEqual(Buffer.from(hash), Buffer.from(signature));
-}
+    [System.Serializable]
+    private class payload
+    {
+        public string message;
+        public string playerId;
+        public string sessionTicket;
 
-export default async function handler(req, res) {
-  if (req.method !== "POST") {
-    return res.status(405).json({ error: "Method not allowed" });
-  }
-
-  const ip = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-  if (isRateLimited(ip)) return res.status(429).json({ error: "Too many requests" });
-
-  const { message, signature } = req.body;
-
-  if (!message || typeof message !== "string" || message.length > 2000) {
-    return res.status(400).json({ error: "Invalid message" });
-  }
-
-  if (!signature || !verifyHMAC({ message }, signature)) {
-    return res.status(401).json({ error: "Invalid signature" });
-  }
-
-  const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
-
-  try {
-    await fetch(webhookUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: message }),
-    });
-
-    res.status(200).json({ success: true });
-  } catch (err) {
-    console.error("Webhook send failed:", err);
-    res.status(500).json({ error: "Failed to send webhook" });
-  }
+        public payload(string message, string playerId, string sessionTicket)
+        {
+            this.message = message;
+            this.playerId = playerId;
+            this.sessionTicket = sessionTicket;
+        }
+    }
 }
