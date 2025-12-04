@@ -65,8 +65,21 @@ export default async function handler(req, res) {
 
     const banData = await banResp.json();
 
-    // If any ban exists and not expired, block
-    const activeBans = (banData.data?.Bans || []).filter(ban => !ban.EndTime);
+    const bans = banData.data?.Bans || [];
+
+    // Detect active bans correctly
+    const activeBans = bans.filter(b => {
+      // PlayFab explicitly marks active bans
+      if (b.Active) return true;
+
+      // If ban end is in the future, still active
+      if (b.EndTime) {
+        const end = new Date(b.EndTime).getTime();
+        if (end > Date.now()) return true;
+      }
+
+      return false;
+    });
 
     if (activeBans.length > 0) {
       return res.status(403).json({ error: "Player is banned" });
@@ -87,6 +100,7 @@ export default async function handler(req, res) {
     });
 
     return res.status(200).json({ success: true });
+
   } catch (err) {
     console.error("API error:", err);
     return res.status(500).json({ error: "Internal server error" });
