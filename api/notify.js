@@ -1,19 +1,38 @@
 export default async function handler(req, res) {
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
+  }
+
+  const { message, playerId } = req.body || {};
+
+  if (!message || typeof message !== "string" || message.length > 2000) {
+    return res.status(400).json({ error: "Invalid message" });
+  }
+
+  if (!playerId) {
+    return res.status(400).json({ error: "Missing playerId" });
+  }
+
   try {
-    const { message, playerId } = req.body || {};
+    // --- Get player profile ---
+    const profileResp = await fetch(
+      "https://103C94.playfabapi.com/Server/GetPlayerProfile",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-SecretKey": process.env.PLAYFAB_SECRET_KEY
+        },
+        body: JSON.stringify({ PlayFabId: playerId })
+      }
+    );
 
-    // Quick validation
-    if (!message || typeof message !== "string") {
-      return res.status(400).json({ error: "Invalid message" });
+    const profileData = await profileResp.json();
+    if (!profileData.data) {
+      return res.status(401).json({ error: "Invalid PlayerId" });
     }
-    if (!playerId) {
-      return res.status(400).json({ error: "Missing playerId" });
-    }
 
-    // DEBUG: confirm handler runs
-    console.log("DEBUG: Handler reached. PlayerId:", playerId);
-
-    // --- Check PlayFab bans ---
+    // --- Get bans ---
     const banResp = await fetch(
       "https://103C94.playfabapi.com/Server/GetUserBans",
       {
@@ -28,21 +47,40 @@ export default async function handler(req, res) {
 
     const banData = await banResp.json();
 
-    // DEBUG: log the full PlayFab ban response
-    console.log("DEBUG BAN RESPONSE:", JSON.stringify(banData, null, 2));
+    const bans = banData.data?.BanData || [];
 
-    // Return the PlayFab response for inspection
-    return res.status(200).json({
-      debug: true,
-      banData
+    const activeBans = bans.filter(b => {
+      if (b.Active) return true;
+      if (b.Expires) {
+        const end = new Date(b.Expires).getTime();
+        if (end > Date.now()) return true;
+      }
+      return false;
     });
+
+    if (activeBans.length > 0) {
+      return res.status(403).json({ error: "Player is banned" });
+    }
+
+    // --- Send message to Discord ---
+    const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
+    if (!webhookUrl) {
+      return res.status(500).json({ error: "Discord webhook not configured" });
+    }
+
+    await fetch(webhookUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        content: `Request From PlayerID: ${playerId}\nMessage: ${message}`
+      })
+    });
+
+    return res.status(200).json({ success: true });
 
   } catch (err) {
-    console.error("DEBUG ERROR:", err);
-    return res.status(500).json({
-      error: "internal error",
-      err: String(err)
-    });
+    console.error("API error:", err);
+    return res.status(500).json({ error: "Internal server error" });
   }
 }
 
