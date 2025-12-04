@@ -12,7 +12,9 @@ export default async function handler(req, res) {
   const maxRequests = 5;
 
   if (!global.requestCounts[ip]) global.requestCounts[ip] = [];
-  global.requestCounts[ip] = global.requestCounts[ip].filter(t => now - t < windowMs);
+  global.requestCounts[ip] = global.requestCounts[ip].filter(
+    t => now - t < windowMs
+  );
 
   if (global.requestCounts[ip].length >= maxRequests) {
     return res.status(429).json({ error: "Too many requests" });
@@ -30,8 +32,8 @@ export default async function handler(req, res) {
   }
 
   try {
-    // Optional: verify player exists using PlayFab server API
-    const pfResp = await fetch(
+    // --- Check player profile ---
+    const profileResp = await fetch(
       "https://103C94.playfabapi.com/Server/GetPlayerProfile",
       {
         method: "POST",
@@ -43,12 +45,34 @@ export default async function handler(req, res) {
       }
     );
 
-    const pfData = await pfResp.json();
-    if (!pfData.data) {
+    const profileData = await profileResp.json();
+    if (!profileData.data) {
       return res.status(401).json({ error: "Invalid PlayerId" });
     }
 
-    // Send to Discord
+    // --- Check bans ---
+    const banResp = await fetch(
+      "https://103C94.playfabapi.com/Server/GetUserBans",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "X-SecretKey": process.env.PLAYFAB_SECRET_KEY
+        },
+        body: JSON.stringify({ PlayFabId: playerId })
+      }
+    );
+
+    const banData = await banResp.json();
+
+    // If any ban exists and not expired, block
+    const activeBans = (banData.data?.Bans || []).filter(ban => !ban.EndTime);
+
+    if (activeBans.length > 0) {
+      return res.status(403).json({ error: "Player is banned" });
+    }
+
+    // --- Send to Discord ---
     const webhookUrl = process.env.DISCORD_WEBHOOK_URL;
     if (!webhookUrl) {
       return res.status(500).json({ error: "Discord webhook not configured" });
@@ -57,11 +81,12 @@ export default async function handler(req, res) {
     await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: `Request From PlayerID: ${playerId}\nMessage: ${message}` })
+      body: JSON.stringify({
+        content: `Request From PlayerID: ${playerId}\nMessage: ${message}`
+      })
     });
 
     return res.status(200).json({ success: true });
-
   } catch (err) {
     console.error("API error:", err);
     return res.status(500).json({ error: "Internal server error" });
