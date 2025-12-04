@@ -46,17 +46,10 @@ export default async function handler(req, res) {
     );
 
     const banData = await banResp.json();
-
     const bans = banData.data?.BanData || [];
 
-    const activeBans = bans.filter(b => {
-      if (b.Active) return true;
-      if (b.Expires) {
-        const end = new Date(b.Expires).getTime();
-        if (end > Date.now()) return true;
-      }
-      return false;
-    });
+    // Only consider bans that are actively enforced
+    const activeBans = bans.filter(b => b.Active);
 
     if (activeBans.length > 0) {
       return res.status(403).json({ error: "Player is banned" });
