@@ -57,7 +57,7 @@ export default async function handler(req, res) {
     await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ content: `PlayerID: ${playerId}\nMessage: ${message}` })
+      body: JSON.stringify({ content: `Request From PlayerID: ${playerId}\nMessage: ${message}` })
     });
 
     return res.status(200).json({ success: true });
