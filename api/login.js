@@ -1,24 +1,24 @@
 import jwt from "jsonwebtoken";
 
 export default function handler(req, res) {
-    const { username, token } = req.query; // Photon sends these as query params
+    if (req.method !== "GET") {
+        return res.status(405).json({ error: "Method not allowed" });
+    }
+
+    const { username } = req.query; // Photon sends this automatically
 
     if (!username) {
         return res.status(400).json({ error: "Missing username/deviceId" });
     }
 
-    // Optionally, you could validate the token here if you want
-    // For now, we just issue a new JWT
-
-    const newToken = jwt.sign(
+    const token = jwt.sign(
         { deviceId: username },
         process.env.JWT_SECRET,
-        { expiresIn: "15m" } // 15-minute token
+        { expiresIn: "15m" }
     );
 
-    // Photon requires at least UserId in the response
     return res.status(200).json({
-        UserId: username, // Photon uses this to identify the player
-        token: newToken
+        UserId: username,
+        token: token
     });
 }
